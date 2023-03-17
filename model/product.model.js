@@ -21,10 +21,6 @@ const productSchema = new Schema({
         type: String,
         required: true
     },
-    color: {
-        type: String,
-        required: true
-    },
     description: {
         type: String,
         required: true

@@ -139,7 +139,7 @@ const refreshToken = asyncHandler(async (req, res) => {
     try {
         const findUser = await User.findOne({ refreshToken });
         if (!findUser) {
-            throw new Error("Refresh token isn't exist on DB");
+            throw new Error("Refresh token doesn't exist on DB");
         }
         const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET_KEY);
         if (decoded.id !== findUser.id) {
@@ -187,7 +187,7 @@ const getAUser = asyncHandler(async (req, res) => {
 })
 
 // Lấy tất cả người dùng
-const getAllUser = asyncHandler(async (req, res) => {
+const getAllUsers = asyncHandler(async (req, res) => {
     try {
         const allUser = await User.find();
         res.json(allUser);
@@ -310,7 +310,7 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
         // Kiểm tra người dùng có tồn tại không
         const findUser = await User.findOne({ email });
         if (!findUser) {
-            throw new Error("User isn't exist");
+            throw new Error("User doesn't exist");
         }
         const token = await findUser.generatePasswordResetToken();
         // Lưu passwordResetToken và passwordResetExpires xuống DB
@@ -361,7 +361,7 @@ module.exports = {
     refreshToken,
     updateUser,
     getAUser,
-    getAllUser,
+    getAllUsers,
     deleteUser,
     blockUser,
     unblockUser,
