@@ -1,4 +1,7 @@
 const User = require("../model/user.model");
+const Cart = require("../model/cart.model");
+const Product = require("../model/product.model");
+const Coupon = require("../model/coupon.model");
 const { generateToken, generateRefreshToken } = require("../config/jwt.config");
 const asyncHandler = require("express-async-handler");
 const jwt = require("jsonwebtoken");
@@ -157,7 +160,6 @@ const updateUser = asyncHandler(async (req, res) => {
     const { id } = req.user;
     const { firstName, lastName, email, mobile, address } = req.body;
     try {
-        validateMongodbId(id);
         const updateUser = await User.findByIdAndUpdate(id, {
             firstName,
             lastName,
@@ -178,9 +180,14 @@ const getAUser = asyncHandler(async (req, res) => {
         validateMongodbId(id);
         const user = req.user;
         if (user.id !== id) {
-            throw new Error("Cannot perform this action");
+            if (req.user.role !== "admin") {
+                throw new Error("Cannot perform this action");
+            }
+            const findUser = await User.findById(id);
+            res.json(findUser);
+        } else {
+            res.json(user);
         }
-        res.json(user);
     } catch (err) {
         throw new Error(err);
     }
@@ -332,13 +339,13 @@ const forgotPasswordToken = asyncHandler(async (req, res) => {
 
 // Làm mới mật khẩu
 const resetPassword = asyncHandler(async (req, res) => {
-    const {password} = req.body;
-    const {token} = req.params;
+    const { password } = req.body;
+    const { token } = req.params;
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
     try {
         const findUser = await User.findOne({
             passwordResetToken: hashedToken,
-            passwordResetExpires: {$gt: Date.now()}
+            passwordResetExpires: { $gt: Date.now() }
         });
         if (!findUser) {
             throw new Error("Token expired, please try again later");
@@ -348,6 +355,126 @@ const resetPassword = asyncHandler(async (req, res) => {
         findUser.passwordResetExpires = undefined;
         await findUser.save();
         res.json("Reset password successfully");
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Lấy danh sách sản phẩm mong muốn
+const getWishlist = asyncHandler(async (req, res) => {
+    try {
+        const findUser = await User.findById(req.user._id).populate("wishlist");
+        res.json(findUser);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Thêm vào giỏ hàng
+const addToCart = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    try {
+        let findCart = await Cart.findOne({ orderBy: userId });
+        if (!findCart) {
+            let newCart = await Cart.create({ orderBy: userId });
+            findCart = newCart;
+        }
+        const productAdded = req.body;
+        validateMongodbId(productAdded._id);
+        let products = [...findCart.products];
+        // Kiểm tra sản phẩm đã tồn tại trong giỏ hàng chưa rồi thêm vào
+        let isExist = false;
+        for (let i = 0; i < products.length; i++) {
+            if (products[i].product.toString() === productAdded._id.toString()) {
+                isExist = true;
+                products[i].count += productAdded.count;
+                break;
+            }
+        }
+        if (isExist === false) {
+            const findProduct = await Product.findById(productAdded._id);
+            products.push({
+                product: productAdded._id,
+                count: productAdded.count,
+                price: findProduct.price
+            })
+        }
+        // Cập nhật lại tổng tiền của giỏ hàng
+        let cartTotal = 0;
+        for (let i = 0; i < products.length; i++) {
+            cartTotal += products[i].price * products[i].count;
+        }
+        const updateCart = await Cart.findOneAndUpdate({ orderBy: userId }, {
+            products: products,
+            cartTotal: cartTotal,
+            totalAfterDiscount: cartTotal
+        }, { new: true })
+        res.json(updateCart);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Xóa sản phẩm khỏi giỏ hàng
+const removeFromCart = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    try {
+        let findCart = await Cart.findOne({ orderBy: userId });
+        if (!findCart) {
+            throw new Error("Cart doesn't exist");
+        }
+        let products = findCart.products;
+        const {prodId} = req.body;
+        validateMongodbId(prodId);
+        // Kiểm tra sản phẩm đã tồn tại trong giỏ hàng chưa và thực hiện xóa
+        let isExist = false;
+        for (let i = 0; i < products.length; i++) {
+            if (products[i].product.toString() === prodId) {
+                isExist = true;
+                const reduceAmount = products[i].price * products[i].count;
+                findCart.cartTotal -= reduceAmount;
+                findCart.totalAfterDiscount -= reduceAmount;
+                products.splice(i, 1);
+                break;
+            }
+        }
+        if (isExist === false) {
+            throw new Error("Product doesn't exist in cart");
+        }
+        findCart.save();
+        res.json(findCart);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Lấy thông tin giỏ hàng
+const getUserCart = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const findCart = await Cart.findOne({orderBy: userId}).populate("products.product");
+        res.json(findCart);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Áp dụng mã giảm giá
+const applyCoupon = asyncHandler(async (req, res) => {
+    const {coupon} = req.body;
+    const userId = req.user.id;
+    try {
+        const findCoupon = await Coupon.findOne({name: coupon});
+        if (!findCoupon) {
+            throw new Error("Wrong coupon");
+        }
+        if ((Date.now() - findCoupon.expiry) >= 0) {
+            throw new Error("Invalid Coupon");
+        }
+        let cart = await Cart.findOne({orderBy: userId});
+        cart.totalAfterDiscount = Math.round(cart.cartTotal * (100 -findCoupon.discount) / 100);
+        cart.save();
+        res.json(cart);
     } catch (err) {
         throw new Error(err);
     }
@@ -368,4 +495,9 @@ module.exports = {
     updatePassword,
     forgotPasswordToken,
     resetPassword,
+    getWishlist,
+    addToCart,
+    removeFromCart,
+    getUserCart,
+    applyCoupon
 }

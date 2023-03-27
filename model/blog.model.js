@@ -44,9 +44,9 @@ const blogSchema = new Schema({
     },
     images: [
         {
-            public_id: String,
-            url: String,
-        },
+            filename: String,
+            path: String
+        }
     ],
 }, {
     timestamps: true

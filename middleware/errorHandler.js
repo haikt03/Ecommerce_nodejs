@@ -11,9 +11,10 @@ const errorHandler = (err, req, res, next) => {
     res.status(statuscode);
     res.json({
         status: "fail",
-        message: err?.message,
-        stack: err?.stack,
+        message: err.message,
+        stack: err.stack,
     });
 };
 
-module.exports = { errorHandler, notFound };
+
+module.exports = { notFound, errorHandler };

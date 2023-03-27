@@ -9,6 +9,8 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const userRouter = require("./route/user.route");
 const productRouter = require("./route/product.route");
+const blogRouter = require("./route/blog.route");
+const couponRouter = require("./route/coupon.route");
 
 const PORT = process.env.PORT;
 
@@ -21,6 +23,8 @@ app.use(cookieParser());
 
 app.use("/api/user", userRouter);
 app.use("/api/product", productRouter);
+app.use("/api/blog", blogRouter);
+app.use("/api/coupon", couponRouter);
 
 app.use(notFound);
 app.use(errorHandler);

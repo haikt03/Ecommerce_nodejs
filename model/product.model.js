@@ -9,7 +9,6 @@ const productSchema = new Schema({
     },
     slug: {
         type: String,
-        required: true,
         unique: true,
         lowercase: true
     },
@@ -39,8 +38,8 @@ const productSchema = new Schema({
     },
     images: [
         {
-            public_id: String,
-            url: String
+            filename: String,
+            path: String
         }
     ],
     tags: String,
@@ -55,7 +54,7 @@ const productSchema = new Schema({
         }
     ],
     totalRating: {
-        type: Number,
+        type: String,
         default: 0
     },
 }, { timestamps: true })
