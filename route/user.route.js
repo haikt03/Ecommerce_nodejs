@@ -1,7 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const { createUser, loginUser, loginAdmin, refreshToken, logout, updateUser, getAUser, getAllUsers, deleteUser, blockUser, unblockUser, updatePassword, forgotPasswordToken, resetPassword, getWishlist, addToCart, removeFromCart, getUserCart, applyCoupon } = require("../controller/user.controller");
+const { createUser, loginUser, loginAdmin, refreshToken, logout, updateUser, getAUser, getAllUsers, deleteUser, blockUser, unblockUser, updatePassword, forgotPasswordToken, resetPassword, getWishlist, addToCart, removeFromCart, getUserCart, applyCoupon, uploadAvatar, emptyCart } = require("../controller/user.controller");
 const {authMiddleware, isAdmin} = require("../middleware/authMiddleware");
+const uploadCloud = require("../middleware/uploader");
+
 
 router.post("/register", createUser);
 router.post("/login", loginUser);
@@ -13,6 +15,7 @@ router.get("/wishlist", authMiddleware, getWishlist);
 router.get("/cart", authMiddleware, getUserCart);
 router.get("/:id", authMiddleware, getAUser);
 router.get("/", authMiddleware, isAdmin, getAllUsers);
+router.delete("/empty-cart", authMiddleware, emptyCart);
 router.delete("/:id", authMiddleware, deleteUser);
 router.post("/block-user/:id", authMiddleware, blockUser);
 router.post("/unblock-user/:id", authMiddleware, unblockUser);
@@ -22,5 +25,6 @@ router.post("/reset-password/:token", resetPassword);
 router.post("/add-to-cart", authMiddleware, addToCart);
 router.post("/remove-from-cart", authMiddleware, removeFromCart);
 router.post("/coupon", authMiddleware, applyCoupon);
+router.put("/avatar", authMiddleware, uploadCloud.single("image"),  uploadAvatar);
 
 module.exports = router;

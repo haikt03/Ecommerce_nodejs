@@ -31,6 +31,10 @@ const userSchema = new Schema({
         type: String,
         default: "user"
     },
+    avatar: {
+        filename: String,
+        path: String
+    },
     isBlocked: {
         type: Boolean,
         default: false

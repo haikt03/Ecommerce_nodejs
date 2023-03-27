@@ -8,6 +8,7 @@ const jwt = require("jsonwebtoken");
 const validateMongodbId = require("../util/validateMongodbId");
 const sendEmail = require("../util/mailer");
 const crypto = require("crypto");
+const cloudinary = require("cloudinary").v2;
 
 // Đăng ký
 const createUser = asyncHandler(async (req, res) => {
@@ -459,6 +460,17 @@ const getUserCart = asyncHandler(async (req, res) => {
     }
 })
 
+// Làm trống giỏ hàng
+const emptyCart = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const cart = await Cart.findOneAndDelete({orderBy: userId});
+        res.json(cart);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
 // Áp dụng mã giảm giá
 const applyCoupon = asyncHandler(async (req, res) => {
     const {coupon} = req.body;
@@ -476,6 +488,28 @@ const applyCoupon = asyncHandler(async (req, res) => {
         cart.save();
         res.json(cart);
     } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Cập nhật avatar
+const uploadAvatar = asyncHandler(async (req, res) => {
+    const fileData = req.file;
+    try {
+        if (!fileData) {
+            throw new Error("No file uploaded!");
+        }
+        // Đẩy ảnh lên DB
+        let findUser = await User.findById(req.user.id);
+        findUser.avatar = {
+            filename: fileData.fieldname,
+            path: fileData.path
+        }
+        await findUser.save();
+        res.json(findUser);
+    } catch (err) {
+        // Xóa ảnh trên cloud khi xảy ra lỗi
+        cloudinary.uploader.destroy(fileData.filename);
         throw new Error(err);
     }
 })
@@ -499,5 +533,7 @@ module.exports = {
     addToCart,
     removeFromCart,
     getUserCart,
-    applyCoupon
+    emptyCart,
+    applyCoupon,
+    uploadAvatar,
 }

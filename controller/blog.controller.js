@@ -160,7 +160,7 @@ const dislikeBlog = asyncHandler(async (req, res) => {
 
 
 // Tải ảnh lên
-const updateImages = asyncHandler(async (req, res) => {
+const uploadImages = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const fileData = req.files;
     try {
@@ -172,6 +172,7 @@ const updateImages = asyncHandler(async (req, res) => {
         if (!fileData) {
             throw new Error("No file uploaded!");
         }
+        // Đẩy ảnh lên DB
         for (let i = 0; i < fileData.length; i++) {
             blog.images.push({
                 filename: fileData[i].filename,
@@ -181,6 +182,7 @@ const updateImages = asyncHandler(async (req, res) => {
         await blog.save();
         res.json(blog);
     } catch (err) {
+        // Xóa ảnh trên cloud nếu xảy ra lỗi
         let filenames = fileData.map((item) => item.filename);
         cloudinary.api.delete_resources(filenames);
         throw new Error(err);
@@ -195,5 +197,5 @@ module.exports = {
     deleteBlog,
     likeBlog,
     dislikeBlog,
-    updateImages
+    uploadImages
 }
