@@ -2,6 +2,7 @@ const User = require("../model/user.model");
 const Cart = require("../model/cart.model");
 const Product = require("../model/product.model");
 const Coupon = require("../model/coupon.model");
+const Order = require("../model/order.model");
 const { generateToken, generateRefreshToken } = require("../config/jwt.config");
 const asyncHandler = require("express-async-handler");
 const jwt = require("jsonwebtoken");
@@ -9,6 +10,7 @@ const validateMongodbId = require("../util/validateMongodbId");
 const sendEmail = require("../util/mailer");
 const crypto = require("crypto");
 const cloudinary = require("cloudinary").v2;
+const uniqid = require("uniqid");
 
 // Đăng ký
 const createUser = asyncHandler(async (req, res) => {
@@ -72,7 +74,6 @@ const loginAdmin = asyncHandler(async (req, res) => {
         if (findAdmin.role !== "admin") {
             throw new Error("You aren't an admin");
         }
-
         if (await findAdmin.isPasswordMatched(password)) {
             // Tạo refresh token rồi lưu vào database và cookie
             const refreshToken = generateRefreshToken(findAdmin.id);
@@ -425,7 +426,7 @@ const removeFromCart = asyncHandler(async (req, res) => {
             throw new Error("Cart doesn't exist");
         }
         let products = findCart.products;
-        const {prodId} = req.body;
+        const { prodId } = req.body;
         validateMongodbId(prodId);
         // Kiểm tra sản phẩm đã tồn tại trong giỏ hàng chưa và thực hiện xóa
         let isExist = false;
@@ -453,7 +454,7 @@ const removeFromCart = asyncHandler(async (req, res) => {
 const getUserCart = asyncHandler(async (req, res) => {
     const userId = req.user.id;
     try {
-        const findCart = await Cart.findOne({orderBy: userId}).populate("products.product");
+        const findCart = await Cart.findOne({ orderBy: userId }).populate("products.product");
         res.json(findCart);
     } catch (err) {
         throw new Error(err);
@@ -464,7 +465,7 @@ const getUserCart = asyncHandler(async (req, res) => {
 const emptyCart = asyncHandler(async (req, res) => {
     const userId = req.user.id;
     try {
-        const cart = await Cart.findOneAndDelete({orderBy: userId});
+        const cart = await Cart.findOneAndDelete({ orderBy: userId });
         res.json(cart);
     } catch (err) {
         throw new Error(err);
@@ -473,18 +474,18 @@ const emptyCart = asyncHandler(async (req, res) => {
 
 // Áp dụng mã giảm giá
 const applyCoupon = asyncHandler(async (req, res) => {
-    const {coupon} = req.body;
+    const { coupon } = req.body;
     const userId = req.user.id;
     try {
-        const findCoupon = await Coupon.findOne({name: coupon});
+        const findCoupon = await Coupon.findOne({ name: coupon });
         if (!findCoupon) {
             throw new Error("Wrong coupon");
         }
         if ((Date.now() - findCoupon.expiry) >= 0) {
             throw new Error("Invalid Coupon");
         }
-        let cart = await Cart.findOne({orderBy: userId});
-        cart.totalAfterDiscount = Math.round(cart.cartTotal * (100 -findCoupon.discount) / 100);
+        let cart = await Cart.findOne({ orderBy: userId });
+        cart.totalAfterDiscount = Math.round(cart.cartTotal * (100 - findCoupon.discount) / 100);
         cart.save();
         res.json(cart);
     } catch (err) {
@@ -514,6 +515,125 @@ const uploadAvatar = asyncHandler(async (req, res) => {
     }
 })
 
+// Tạo đơn hàng
+const createOrder = asyncHandler(async (req, res) => {
+    const { method, couponApplied, currency } = req.body;
+    const userId = req.user.id;
+    try {
+        if (!method) throw new Error("You need choice payment method");
+        let cart = await Cart.findOne({ orderBy: userId });
+        if (!cart) {
+            throw new Error("No products in your cart");
+        }
+        let finalAmount = 0;
+        if (couponApplied && cart.totalAfterDiscount) {
+            finalAmount = cart.totalAfterDiscount;
+        } else {
+            finalAmount = cart.cartTotal;
+        }
+        // Tạo thông tin đơn hàng
+        let newOrder = await new Order({
+            products: cart.products,
+            paymentIntent: {
+                id: uniqid(),
+                method: method,
+                amount: finalAmount,
+                currency: currency
+            },
+            orderStatus: (method !== "Payment on delivery") ? "Processing" : "Not processed",
+            orderBy: userId,
+        }).save();
+        if (newOrder.orderStatus === "Not processed") {
+            res.json({ message: "You need to pay" });
+        } else {
+            // Tính toán lại sản phẩm tồn kho và đã bán
+            let update = cart.products.map((item) => {
+                return {
+                    updateOne: {
+                        filter: { _id: item.product._id },
+                        update: { $inc: { quantity: -item.count, sold: +item.count } },
+                    },
+                };
+            });
+            const updated = await Product.bulkWrite(update);
+            await Cart.findOneAndDelete({ orderBy: userId });
+            res.json({ message: "success" });
+        }
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+//Lấy thông tin 1 đơn hàng
+const getAOrder = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const { id } = req.params;
+    try {
+        validateMongodbId(id);
+        const findOrder = await Order.findById(id);
+        if (req.user.role !== "admin" && findOrder.orderBy.toString() !== userId) {
+            throw new Error("Cannot perform this action");
+        }
+        res.json(findOrder);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+
+// Người dùng lấy thông tin các đơn hàng của mình
+const getMyOrders = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    try {
+        const findOrder = await Order.find({ orderBy: userId })
+            .populate("products.product")
+            .populate("orderBy")
+            .exec();
+        res.json(findOrder);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Admin lấy thông tin tất cả các đơn hàng
+const getAllOrders = asyncHandler(async (req, res) => {
+    try {
+        const findOrder = await Order.find()
+            .populate("products.product")
+            .populate("orderBy")
+            .exec();
+        res.json(findOrder);
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
+// Cập nhật orderStatus khi người dùng đã thanh toán
+const updateOrderStatus = asyncHandler(async (req, res) => {
+    const { orderId } = req.body;
+    try {
+        validateMongodbId(orderId);
+        const order = await Order.findById(orderId);
+        order.orderStatus = "Processing";
+        await order.save();
+        const cart = await Cart.findOne({ orderBy: order.orderBy });
+        // Tính toán lại sản phẩm tồn kho và đã bán
+        let update = cart.products.map((item) => {
+            return {
+                updateOne: {
+                    filter: { _id: item.product._id },
+                    update: { $inc: { quantity: -item.count, sold: +item.count } },
+                },
+            };
+        });
+        const updated = await Product.bulkWrite(update);
+        await Cart.findOneAndDelete({ orderBy: order.orderBy });
+        res.json({ message: "success" });
+    } catch (err) {
+        throw new Error(err);
+    }
+})
+
 module.exports = {
     createUser,
     loginUser,
@@ -536,4 +656,9 @@ module.exports = {
     emptyCart,
     applyCoupon,
     uploadAvatar,
+    createOrder,
+    getAOrder,
+    getMyOrders,
+    getAllOrders,
+    updateOrderStatus
 }
